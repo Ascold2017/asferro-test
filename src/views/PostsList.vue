@@ -67,6 +67,7 @@
 
 <script>
 import gql from 'graphql-tag'
+import _get from 'lodash.get'
 const GET_POSTS_QUERY = gql`query posts($options: PageQueryOptions) {
   posts(options: $options) {
     data {
@@ -136,10 +137,10 @@ export default {
   },
   computed: {
     postsList() {
-      return this.$apollo.loading ? [] : this.posts.data
+      return this.$apollo.loading ? [] : _get(this.posts, 'data', [])
     },
     postsTotalCount() {
-      return this.$apollo.loading ? 0 : this.posts.meta.totalCount
+      return this.$apollo.loading ? 0 : +_get(this.posts, 'meta.totalCount', 0)
     },
     postsPagesCount() {
       return Math.round(this.postsTotalCount / this.limit)
@@ -163,9 +164,7 @@ export default {
             }
           },
           // Mutate the previous result
-          updateQuery: (previousResult, { fetchMoreResult }) => {
-            return fetchMoreResult
-          },
+          updateQuery: (previousResult, { fetchMoreResult }) => fetchMoreResult,
         });
       }
     },
@@ -179,13 +178,80 @@ export default {
       this.editedIndex = -1
     },
     editPost(post) {
-      this.editedIndex = post.id
-      this.editedPost.title = post.title
-      this.editedPost.body = post.body
+      this.editedIndex = _get(post, 'id', null)
+      this.editedPost.title = _get(post, 'title', '')
+      this.editedPost.body = _get(post, 'body', '')
       this.dialog = true
     },
     savePost() {
       this.editedIndex === -1 ? this.addPost() : this.updatePost()
+    },
+    onNewPostRecieved(previousResult, { mutationResult }) {
+      this.closeDialog()
+      const prevPosts = _get(previousResult, 'posts.data', [])
+      const createdPost = _get(mutationResult, 'data.createPost', {})
+      const prevMeta = _get(previousResult, 'posts.meta', {})
+      const prevTotalCount = +_get(prevMeta, 'totalCount', 0)
+      
+      if (
+        prevPosts.find(post => post.id === createdPost.id) ||
+        this.page !== this.postsPagesCount
+      ) return previousResult
+
+      return {
+        posts: {
+          ...previousResult.posts,
+          data: [
+            ...prevPosts,
+            createdPost
+          ],
+          meta: {
+            ...prevMeta,
+            totalCount: prevTotalCount + 1
+          },
+        }
+      };
+    },
+    onUpdatePostRecieved(previousResult, { mutationResult }) {
+      console.log(111)
+      this.closeDialog()
+      const prevPosts = _get(previousResult, 'posts.data', [])
+      const updatedPost = _get(mutationResult, 'data.updatePost', {})
+      return {
+        posts: {
+          ...previousResult.posts,
+          data: [
+            ...prevPosts.map(post => {
+              if (post.id === updatedPost.id) {
+                return {
+                  ...post,
+                  ...updatedPost
+                }
+              }
+              return post
+            })
+          ]
+        }
+      };
+    },
+    onDeletePostRecieved(postToDeleteId, previousResult, { mutationResult }) {
+      const isDeleted = !!_get(mutationResult, 'data.deletePost', false)
+      const prevPosts = _get(previousResult, 'posts.data', [])
+      const prevMeta = _get(previousResult, 'posts.meta', {})
+      const prevTotalCount = +_get(prevMeta, 'totalCount', 0)
+      if (isDeleted) {
+        return {
+          posts: {
+            ...previousResult.posts,
+            data: prevPosts.filter(post => post.id !== postToDeleteId),
+            meta: {
+              ...prevMeta,
+              totalCount: prevTotalCount -1
+            }
+          }
+        }
+      }
+      return previousResult
     },
     addPost() {
       this.$apollo.mutate({
@@ -197,27 +263,7 @@ export default {
           }
         },
         updateQueries: {
-          posts: (previousResult, { mutationResult }) => {
-            this.closeDialog()
-
-            if (previousResult.posts.data.find(post => post.id === mutationResult.data.createPost.id)) {
-              return previousResult
-            }
-
-            return {
-              posts: {
-                ...previousResult.posts,
-                data: [
-                  ...previousResult.posts.data,
-                  mutationResult.data.createPost
-                ],
-                meta: {
-                  ...previousResult.posts.meta,
-                  totalCount: previousResult.posts.meta.totalCount + 1
-                },
-              }
-            };
-          }
+          posts: this.onNewPostRecieved
         }
       })
     },
@@ -231,53 +277,17 @@ export default {
             body: this.editedPost.body
           }
         },
-        updateQueries: {
-          posts: (previousResult, { mutationResult }) => {
-            this.closeDialog()
-
-            return {
-              posts: {
-                ...previousResult.posts,
-                data: [
-                  ...previousResult.posts.data.map(post => {
-                    if (post.id === mutationResult.data.updatePost.id) {
-                      return {
-                        ...post,
-                        ...mutationResult.data.updatePost
-                      }
-                    }
-                    return post
-                  })
-                ]
-              }
-            };
-          }
-        }
+        updateQueries: { posts: this.onUpdatePostRecieved }
       })
     },
     deletePost(postToDeleteId) {
-      
       this.$apollo.mutate({
         mutation: DELETE_POST_QUERY,
         variables: {
           id: postToDeleteId,
         },
         updateQueries: {
-          posts: (previousResult, { mutationResult }) => {
-            if (mutationResult.data.deletePost) {
-              return {
-                posts: {
-                  ...previousResult.posts,
-                  data: previousResult.posts.data.filter(post => post.id !== postToDeleteId),
-                  meta: {
-                    ...previousResult.posts.meta,
-                    totalCount: previousResult.posts.meta.totalCount -1
-                  }
-                }
-              }
-            }
-            return previousResult
-          }
+          posts: this.onDeletePostRecieved.bind(this, postToDeleteId)
         }
       })
     }
