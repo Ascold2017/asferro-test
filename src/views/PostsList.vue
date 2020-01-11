@@ -65,6 +65,7 @@
 
 <script>
 import { mapState, mapActions, mapMutations, mapGetters } from 'vuex'
+import { mapCacheActions }from 'vuex-cache'
 export default {
   data () {
     return {
@@ -116,7 +117,8 @@ export default {
     }
   },
   methods: {
-    ...mapActions(['getPosts', 'loadPage', 'createPost', 'patchPost', 'deletePost']),
+    ...mapCacheActions(['getPosts']),
+    ...mapActions(['loadPage', 'createPost', 'patchPost', 'deletePost']),
     ...mapMutations([
       'SET_POST_TITLE',
       'SET_POST_BODY',

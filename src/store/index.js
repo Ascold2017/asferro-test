@@ -3,9 +3,11 @@ import Vuex from 'vuex'
 import _get from 'lodash.get'
 import { apolloClient } from '@/helpers/apolloClient'
 import { GET_POSTS_QUERY, CREATE_POST_QUERY, UPDATE_POST_QUERY, DELETE_POST_QUERY } from './queries'
+import createCache from 'vuex-cache'
 Vue.use(Vuex)
 
 export default new Vuex.Store({
+  plugins: [createCache()],
   state: {
     page: 1,
     limit: 15,
@@ -71,7 +73,6 @@ export default new Vuex.Store({
       await dispatch('getPosts')
     },
     async getPosts({ state, commit }) {
-      console.log(apolloClient)
       commit('SET_LOADING', true)
       await apolloClient.query({
         query: GET_POSTS_QUERY,
